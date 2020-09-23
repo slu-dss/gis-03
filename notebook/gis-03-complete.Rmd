@@ -8,7 +8,7 @@ output:
 ---
 
 ## Introduction
-This notebook extends our `leaflet` experience to include both multi-layer maps as well as thematic choropleth maps.
+This notebook expands mapping to two new packages - `ggplot2` and `tmap`. We'll focus on thematic choropleth mapping today.
 
 ## Dependencies
 This notebook requires a variety of packages for working with spatial data:
@@ -16,12 +16,13 @@ This notebook requires a variety of packages for working with spatial data:
 ```{r load-packages}
 # tidyverse packages
 library(dplyr)        # data wrangling
+library(ggplot2)      # plotting
 
 # spatial packages
-library(leaflet)      # interactive maps
 library(mapview)      # preview spatial data
 library(sf)           # spatial data tools
-library(tigris)       # TIGER/Line data access
+library(tigris)       # access TIGER/Line shapefile data
+library(tmap)         # mapping
 
 # other packages
 library(here)         # file path management
@@ -32,14 +33,6 @@ library(RColorBrewer) # color palettes
 First, we need to load up our data. This is review from the first session, and so we've pre-filled the code for you. We'll automatically re-project the data as well (also review):
 
 ```{r load-data}
-# point data 1 - Violent Crime in the Shaw Neighborhood
-shawCrime <- st_read(here("data", "SHAW_Violent_2018", "SHAW_Violent_2018.shp")) %>%
-  st_transform(crs = 4326)
-
-# point data 2 - Food Retail in St. Louis
-grocery <- st_read(here("data", "STL_FOOD_Grocery.geojson"))
-cornerStore <- st_read(here("data", "STL_FOOD_Convenience.geojson"))
-
 # polygon data 1 - St. Louis Neighborhood Population
 nhood <- st_read(here("data", "STL_DEMOS_Nhoods", "STL_DEMOS_Nhoods.shp")) %>%
   st_transform(crs = 4326)
@@ -48,20 +41,8 @@ nhood <- st_read(here("data", "STL_DEMOS_Nhoods", "STL_DEMOS_Nhoods.shp")) %>%
 covid <- st_read(here("data", "daily_snapshot_regional.geojson"))
 ```
 
-Now, take a few moments using your *console* and explore each of these data sets using the `mapview()` function!
-
 ## Download a Bit of Extra Data
-We'll supplement the data we've loaded with some boundary data for a four county region in the St. Louis area (the City, the County, St. Charles County, and Jefferson County).
-
-We'll use the `tigris` package to do this. Using `tigris`, you can download most of the common spatial data sets published by the U.S. Census Bureau that reflect both administrative boundaries as well as elements of our physical and human geography. However, this package cannot be used to download population data (that is the purpose of `tidycensus`).
-
-The pipelines read as follows:
-
-1. We'll assign to our new object `region` the result of the following pipeline.
-2. First, we'll download county boundaries for Missouri (FIPS Code 29), *then*
-3. We'll select the `GEOID` and `NAMELSAD` columns using the `dplyr` `select()` function, *then*
-4. We'll keep only the observations that match the GEOID codes for the select counties using the `dplyr` `filter()` function, *then*
-5. We'll re-project our data.
+We'll use the same process as last week to create boundary data for both the city and the region:
 
 ```{r load-counties}
 region <- counties(state = 29) %>%
@@ -72,136 +53,129 @@ region <- counties(state = 29) %>%
 city <- filter(region, GEOID == "29510")
 ```
 
-## More with Point Data
-Last session, we made some simple point maps. Today, we want to extend those skills by mapping multiple point layers. We're going to start with the Shaw crime data and build a map together. First, we need to separate out two categories of crimes - homicides and aggravated assaults. We'll use the `dplyr` `filter()` function to do this:
+## Simple Maps with `ggplot2`
+### Basic Mapping of Geometric Objects
+`ggplot2` is the premier graphics package for `R`. It is an incredibly powerful visualization tool that increasingly supports spatial work and mapping. The basic `ggplot2` workflow requires chaining together functions with the `+` sign. 
 
-```{r subset-shaw}
-shawHomicide <- filter(shawCrime, crimeCt == "Homicide")
-shawAssault <- filter(shawCrime, crimeCt == "Aggravated Assault")
+We'll start by creating a `ggplot2` object with the `ggplot()` function, and then adding a "geom", which provides `ggplot2` instructions on how our data should be visualized. We can read these like paragraphs:
+
+1. First, we create an empty `ggplot2` object, **then**
+2. we add the `nhood` data and visualize its geometry.
+
+```{r ggplot2-nhoodSimple}
+ggplot() +
+  geom_sf(data = nhood, fill = "#bababa")
 ```
 
-Then, we'll use a number of different `leaflet` functions to build our map.
+You can see empty spaces where there are major parks - if we wanted to give these a background color, we could add the `city` layer under our `nhood` layer. We can also add the `city` layer again on top to give the city border a pronounced outline. `ggplot2` relies on layering different geoms to produce complicated plots. We can assign each geom a specific set of aesthetic characteristics and use data from different objects.
 
-Within `addCircleMarkers`, we we'll use the following arguments:
+```{r ggplot2-nhoodSimple2}
+ggplot() +
+  geom_sf(data = city, fill = "#ffffff", color = NA) +
+  geom_sf(data = nhood, fill = "#bababa") +
+  geom_sf(data = city, fill = NA, color = "#000000", size = .75)
+```
+Now it is your turn - re-create this process but map zip codes using the `covid` data and use the regional county boundaries in `region`:
 
-  * `radius` - the size of the marker
-  * `opacity` - the inner part of the marker
-  * `color` - the color of the outer part of the marker
-  * `fillColor` - the color of the inner part of the marker
-
-```{r map-crime}
-leaflet() %>%
-  addProviderTiles(providers$Esri.WorldStreetMap) %>%
-  addCircleMarkers(data = shawAssault,
-                   radius = 8,
-                   opacity = 1,
-                   color = "#ff6500",
-                   fillColor = "#ff6500",
-                   popup = paste0("<b>Crime</b>: ", shawAssault$crimeCt, "<br>",
-                                  "<b>Address</b>: ", shawAssault$ILEADSA, " ",
-                                  shawAssault$ILEADSS)) %>%
-  addCircleMarkers(data = shawHomicide,
-                   radius = 8,
-                   opacity = 1,
-                   color = "#ff0000",
-                   fillColor = "#ff0000",
-                   popup = paste0("<b>Crime</b>: ", shawHomicide$crimeCt, "<br>",
-                                  "<b>Address</b>: ", shawHomicide$ILEADSA, " ",
-                                  shawHomicide$ILEADSS))
+```{r ggplot2-covidSimple}
+ggplot() +
+  geom_sf(data = region, fill = "#ffffff", color = NA) +
+  geom_sf(data = covid, fill = "#bababa") +
+  geom_sf(data = region, fill = NA, color = "#000000", size = .75)
 ```
 
-Now it is your turn, use the same basic process to map grocery stores and corner stores in St. Louis City and St. Louis County:
+### Mapping Quantities with `ggplot2`
+If we wanted to start to map data instead of just the geometric properties, we would specify an "aesthetic mapping" using `mapping= aes()` in the geom of interest. Here, we create a fill that is the product of taking the population in 2017 and normalizing it by square kilometers as we did in the `leaflet` section above. We provide additional instructions about how our data should be colored with the `scale_fill_distiller()` function, which gives us access to the `RColorBrewer` palettes.
 
-```{r map-stores}
-leaflet() %>%
-  addProviderTiles(providers$Esri.WorldStreetMap) %>%
-  addCircleMarkers(data = cornerStore,
-                   radius = 8,
-                   opacity = 1,
-                   color = "#3b0076",
-                   fillColor = "#3b0076",
-                   popup = paste0("<b>Name</b>: ", cornerStore$title, "<br>",
-                                  "<b>Category</b>: Convenience Store <br>",
-                                  "<b>Address:</b><br>",
-                                  cornerStore$address, "<br>",
-                                  cornerStore$address2, "<br>",
-                                  "<b>County</b>: ", cornerStore$county)) %>%
-  addCircleMarkers(data = grocery,
-                   radius = 8,
-                   opacity = 1,
-                   color = "#006700",
-                   fillColor = "#006700",
-                   popup = paste0("<b>Name</b>: ", grocery$title, "<br>",
-                                  "<b>Category</b>: Grocery <br>",
-                                  "<b>Address:</b><br>",
-                                  grocery$address, "<br>",
-                                  grocery$address2, "<br>",
-                                  "<b>County</b>: ", grocery$county))
+```{r ggplot2-nhoodFull}
+ggplot() +
+  geom_sf(data = city, fill = "#ffffff", color = NA) +
+  geom_sf(data = nhood, mapping = aes(fill = pop17/(AREA/1000000))) +
+  geom_sf(data = city, fill = NA, color = "#000000", size = .75) +
+  scale_fill_distiller(palette = "Greens", trans = "reverse", name = "Population per\nSquare Kilometer") +
+  labs(
+    title = "Population Density (2017)",
+    subtitle = "Neighborhoods in St. Louis, MO",
+    caption = "Map by Christopher Prener, Ph.D."
+  ) +
+  theme_minimal() 
 ```
 
-## Making Choropleth Maps
-We can also create thematic choropleth maps that map quantities using `leaflet`. We'll use this as a way to demonstrate how to overlay polygons on top of each other as well.
+Replicate this process, using the `case_rate` column in `covid` to plot the already normalized numbers of cases per 1,000 people in each zip code:
 
-Instead of `addCircleMarkers()` or `addMarkers()`, we'll use `addPolygons()` with some of the following options:
-
-* `color` - outline ("stroke") color for each polygon
-* `weight` - stroke width
-* `opacity` - stroke opacity
-* `smoothFactor` - allows `leaflet` to simplify polygons depending on zoom
-* `fillOpacity` - fill opacity
-* `fillColor` - creates the fill itself
-* `highlightOptions` - creates effect when mouse drags over specific polygons
-
-```{r map-population}
-# create color palette
-npal <- colorNumeric("YlOrRd", nhood$pop17)
-
-# create leaflet object
-leaflet() %>%
-  addProviderTiles(providers$CartoDB.Positron) %>%
-  addPolygons(
-    data = nhood,
-    color = "#444444",
-    weight = 1,
-    opacity = 1.0,
-    smoothFactor = 0.5,
-    fillOpacity = 0.5,
-    fillColor = ~npal(pop17),
-    highlightOptions = highlightOptions(color = "white", weight = 2, bringToFront = TRUE),
-    popup = paste("<b>Name:</b> ", nhood$NHD_NAME, "<br>",
-                  "<b>2017 Population:</b> ", round(nhood$pop17, digits = 0))) %>%
-  addPolylines(
-    data = city,
-    color = "#000000",
-    weight = 3
-  )  %>%
-  addLegend(pal = npal, values = nhood$pop17, opacity = .5, title = "Population (2017)")
+```{r ggplot2-covidFull}
+ggplot() +
+  geom_sf(data = region, fill = "#ffffff", color = NA) +
+  geom_sf(data = covid, mapping = aes(fill = case_rate)) +
+  geom_sf(data = region, fill = NA, color = "#000000", size = .75) +
+  scale_fill_distiller(palette = "RdPu", trans = "reverse", name = "Cases Per 1,000 People") +
+  labs(
+    title = "Reported COVID-19 Cases",
+    subtitle = "ZIP Codes in St. Louis, MO",
+    caption = "Map by Christopher Prener, Ph.D."
+  ) +
+  theme_minimal() 
 ```
 
-Now it is your turn. Apply the same principles to mapping COVID cases in St. Louis:
+## Map Layouts with `tmap`
+`tmap` uses a similar logic to `ggplot2` - it layers elements on top of each other to produce maps. It is dedicated to working with spatial data, however, and has some features that `ggplot2` does not. 
 
-```{r map-covid}
-# create color palette
-npal <- colorNumeric("RdPu", covid$cases)
+### Basic Mapping of Geometric Objects
+We'll start with a basic map that, like we have previously, just display the geometry of the city's neighborhoods. Similar to `ggplot2`, functions are chained together with the `+` sign. We can read these like paragraphs:
 
-# create leaflet object
-leaflet() %>%
-  addProviderTiles(providers$CartoDB.Positron) %>%
-  addPolygons(
-    data = covid,
-    color = "#444444",
-    weight = 1,
-    opacity = 1.0,
-    smoothFactor = 0.5,
-    fillOpacity = 0.5,
-    fillColor = ~npal(cases),
-    highlightOptions = highlightOptions(color = "white", weight = 2, bringToFront = TRUE),
-    popup = paste("<b>Zip:</b> ", covid$GEOID_ZCTA, "<br>",
-                  "<b>Cases:</b> ", covid$cases)) %>%
-  addPolylines(
-    data = region,
-    color = "#000000",
-    weight = 3
-  )  %>%
-  addLegend(pal = npal, values = covid$cases, opacity = .5, title = "COVID Cases")
+1. First, we take the `nhood` data, **then**
+2. we create our `tmap` layer out of its shape, **then**
+3. we add a fill using our layer, **then**
+4. we add borders using our layer.
+  
+```{r tmap-simple}
+nhood %>%
+  tm_shape() +
+    tm_fill() +
+    tm_borders() 
 ```
+
+### Mapping Quantities with `tmap`
+Like `ggplot2`, we can plot quantities using the `tm_polygons()` function. The `palette` argument accepts names of both `RColorBrewer` and `viridis` palettes. `tmap` also contains a number of tools for creating map layouts that "feel" more like desktop GIS outputs.
+
+```{r tmap-nhoodFull}
+tm_shape(city) +
+  tm_fill(fill = "#ebebeb") + 
+  tm_shape(nhood) +
+  tm_polygons(col = "pop17", 
+              palette = "viridis", 
+              style = "jenks",
+              convert2density = TRUE,
+              title = "Population per\nSquare Kilometer") +
+  tm_shape(city) +
+  tm_borders(lwd = 2) +
+  tm_scale_bar() +
+  tm_layout(
+    title = "Population Density (2017)",
+    frame = FALSE,
+    legend.outside = TRUE,
+    legend.position = c("left", "bottom"))
+```
+Now, it is your turn to repeat this process. Create a map layout for the `covid` data, mapping `case_rate` again. (Hint: you won't need to set `convert2density` to `TRUE`)
+
+```{r tmap-covidFull}
+tm_shape(region) +
+  tm_fill(fill = "#ebebeb") + 
+  tm_shape(covid) +
+  tm_polygons(col = "case_rate", 
+              palette = "RdPu", 
+              style = "jenks",
+              convert2density = FALSE,
+              title = "Cases per 1,000 Per Residents") +
+  tm_shape(region) +
+  tm_borders(lwd = 2) +
+  tm_scale_bar() +
+  tm_layout(
+    title = "Reported COVID-19 Cases\nby ZIP Code",
+    frame = FALSE,
+    legend.outside = TRUE,
+    legend.position = c("left", "bottom"))
+```
+
+## Saving Maps
+There are two processes for saving maps, one for `ggplot2` and one for `tmap`. `ggplot2` uses `ggsave()` while `tmap` uses `tmap_save()`.

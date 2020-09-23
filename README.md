@@ -10,7 +10,7 @@ This repository contains the third lesson for our series on GIS work in `R`. We'
 ### Objectives
 At the end of this lesson, participants should be able to:
 
-1.
+1. Compose map static layouts using `ggplot2` and `tmap`
 
 ### Lesson Resources
 * The [`notebook/`](/notebook) directory contains the materials for this lesson.
@@ -26,7 +26,7 @@ If you participated in the first session, there is no new software for today. Ho
 ```r
 install.packages(c("tidyverse", "here", "knitr",
                    "mapview", "rmarkdown", "sf",
-                   "tmap", "usethis"))
+                   "tigris", "tmap", "usethis"))
 ```
 
 ### Access Lesson
