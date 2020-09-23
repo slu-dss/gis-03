@@ -1,0 +1,155 @@
+---
+title: "GIS-03 - Mapping with ggplot2 and tamp"
+author: "Christopher Prener, Ph.D."
+date: '(`r format(Sys.time(), "%B %d, %Y")`)'
+output:
+  github_document: default
+  html_notebook: default
+---
+
+## Introduction
+This notebook expands mapping to two new packages - `ggplot2` and `tmap`. We'll focus on thematic choropleth mapping today.
+
+## Dependencies
+This notebook requires a variety of packages for working with spatial data:
+
+```{r load-packages}
+# tidyverse packages
+library(dplyr)        # data wrangling
+library(ggplot2)      # plotting
+
+# spatial packages
+library(mapview)      # preview spatial data
+library(sf)           # spatial data tools
+library(tigris)       # access TIGER/Line shapefile data
+library(tmap)         # mapping
+
+# other packages
+library(here)         # file path management
+library(RColorBrewer) # color palettes
+```
+
+## Load Data
+First, we need to load up our data. This is review from the first session, and so we've pre-filled the code for you. We'll automatically re-project the data as well (also review):
+
+```{r load-data}
+# polygon data 1 - St. Louis Neighborhood Population
+nhood <- st_read(here("data", "STL_DEMOS_Nhoods", "STL_DEMOS_Nhoods.shp")) %>%
+  st_transform(crs = 4326)
+
+# polygon data 2 - St. Louis COVID Cases by ZIP Code
+covid <- st_read(here("data", "daily_snapshot_regional.geojson"))
+```
+
+## Download a Bit of Extra Data
+We'll use the same process as last week to create boundary data for both the city and the region:
+
+```{r load-counties}
+region <- counties(state = 29) %>%
+  select(GEOID, NAMELSAD) %>%
+  filter(GEOID %in% c("29099", "29183", "29189", "29510")) %>%
+  st_transform(crs = 4326)
+
+city <- filter(region, GEOID == "29510")
+```
+
+## Simple Maps with `ggplot2`
+### Basic Mapping of Geometric Objects
+`ggplot2` is the premier graphics package for `R`. It is an incredibly powerful visualization tool that increasingly supports spatial work and mapping. The basic `ggplot2` workflow requires chaining together functions with the `+` sign. 
+
+We'll start by creating a `ggplot2` object with the `ggplot()` function, and then adding a "geom", which provides `ggplot2` instructions on how our data should be visualized. We can read these like paragraphs:
+
+1. First, we create an empty `ggplot2` object, **then**
+2. we add the `nhood` data and visualize its geometry.
+
+```{r ggplot2-nhoodSimple}
+ggplot() +
+  geom_sf(data = nhood, fill = "#bababa")
+```
+
+You can see empty spaces where there are major parks - if we wanted to give these a background color, we could add the `city` layer under our `nhood` layer. We can also add the `city` layer again on top to give the city border a pronounced outline. `ggplot2` relies on layering different geoms to produce complicated plots. We can assign each geom a specific set of aesthetic characteristics and use data from different objects.
+
+```{r ggplot2-nhoodSimple2}
+ggplot() +
+  geom_sf(data = city, fill = "#ffffff", color = NA) +
+  geom_sf(data = nhood, fill = "#bababa") +
+  geom_sf(data = city, fill = NA, color = "#000000", size = .75)
+```
+
+Now it is your turn - re-create this process but map zip codes using the `covid` data and use the regional county boundaries in `region`:
+
+```{r ggplot2-covidSimple}
+
+```
+
+### Mapping Quantities with `ggplot2`
+If we wanted to start to map data instead of just the geometric properties, we would specify an "aesthetic mapping" using `mapping= aes()` in the geom of interest. Here, we create a fill that is the product of taking the population in 2017 and normalizing it by square kilometers as we did in the `leaflet` section above. We provide additional instructions about how our data should be colored with the `scale_fill_distiller()` function, which gives us access to the `RColorBrewer` palettes.
+
+```{r ggplot2-nhoodFull}
+ggplot() +
+  geom_sf(data = city, fill = "#ffffff", color = NA) +
+  geom_sf(data = nhood, mapping = aes(fill = pop17/(AREA/1000000))) +
+  geom_sf(data = city, fill = NA, color = "#000000", size = .75) +
+  scale_fill_distiller(palette = "Greens", trans = "reverse", name = "Population per\nSquare Kilometer") +
+  labs(
+    title = "Population Density (2017)",
+    subtitle = "Neighborhoods in St. Louis, MO",
+    caption = "Map by Christopher Prener, Ph.D."
+  ) +
+  theme_minimal() 
+```
+
+Replicate this process, using the `case_rate` column in `covid` to plot the already normalized numbers of cases per 1,000 people in each zip code:
+
+```{r ggplot2-covidFull}
+
+```
+
+## Map Layouts with `tmap`
+`tmap` uses a similar logic to `ggplot2` - it layers elements on top of each other to produce maps. It is dedicated to working with spatial data, however, and has some features that `ggplot2` does not. 
+
+### Basic Mapping of Geometric Objects
+We'll start with a basic map that, like we have previously, just display the geometry of the city's neighborhoods. Similar to `ggplot2`, functions are chained together with the `+` sign. We can read these like paragraphs:
+
+1. First, we take the `nhood` data, **then**
+2. we create our `tmap` layer out of its shape, **then**
+3. we add a fill using our layer, **then**
+4. we add borders using our layer.
+  
+```{r tmap-simple}
+nhood %>%
+  tm_shape() +
+    tm_fill() +
+    tm_borders() 
+```
+
+### Mapping Quantities with `tmap`
+Like `ggplot2`, we can plot quantities using the `tm_polygons()` function. The `palette` argument accepts names of both `RColorBrewer` and `viridis` palettes. `tmap` also contains a number of tools for creating map layouts that "feel" more like desktop GIS outputs.
+
+```{r tmap-nhoodFull}
+tm_shape(city) +
+  tm_fill(fill = "#ebebeb") + 
+  tm_shape(nhood) +
+  tm_polygons(col = "pop17", 
+              palette = "viridis", 
+              style = "jenks",
+              convert2density = TRUE,
+              title = "Population per\nSquare Kilometer") +
+  tm_shape(city) +
+  tm_borders(lwd = 2) +
+  tm_scale_bar() +
+  tm_layout(
+    title = "Population Density (2017)",
+    frame = FALSE,
+    legend.outside = TRUE,
+    legend.position = c("left", "bottom"))
+```
+
+Now, it is your turn to repeat this process. Create a map layout for the `covid` data, mapping `case_rate` again. (Hint: you won't need to set `convert2density` to `TRUE`)
+
+```{r tmap-covidFull}
+
+```
+
+## Saving Maps
+There are two processes for saving maps, one for `ggplot2` and one for `tmap`. `ggplot2` uses `ggsave()` while `tmap` uses `tmap_save()`.
